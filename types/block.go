@@ -34,7 +34,6 @@ const (
 	// 🏺 Note that this value is the encoded size of the ProtocolBuffer. See TestMaxHeaderBytes() for how Tendermint
 	//  calculates this value. Add/remove Ostracon-specific field sizes to/from this heuristically determined constant.
 	MaxHeaderBytes int64 = 626 +
-		(2 + 32 + 1) + // +VotersHash
 		(2 + 5) + // +Round
 		(2 + int64(vrf.ProofSize) + 1) // +Proof
 
@@ -374,7 +373,6 @@ type Header struct {
 	DataHash       tmbytes.HexBytes `json:"data_hash"`        // transactions
 
 	// hashes from the app output from the prev block
-	VotersHash         tmbytes.HexBytes `json:"voters_hash"`          // voters for the current block
 	ValidatorsHash     tmbytes.HexBytes `json:"validators_hash"`      // validators for the current block
 	NextValidatorsHash tmbytes.HexBytes `json:"next_validators_hash"` // validators for the next block
 	ConsensusHash      tmbytes.HexBytes `json:"consensus_hash"`       // consensus params for current block
@@ -397,7 +395,7 @@ type Header struct {
 func (h *Header) Populate(
 	version tmversion.Consensus, chainID string,
 	timestamp time.Time, lastBlockID BlockID,
-	votersHash, validatorsHash, nextValidatorsHash []byte,
+	valHash, nextValHash []byte,
 	consensusHash, appHash, lastResultsHash []byte,
 	proposerAddress Address,
 	round int32,
@@ -407,9 +405,8 @@ func (h *Header) Populate(
 	h.ChainID = chainID
 	h.Time = timestamp
 	h.LastBlockID = lastBlockID
-	h.VotersHash = votersHash
-	h.ValidatorsHash = validatorsHash
-	h.NextValidatorsHash = nextValidatorsHash
+	h.ValidatorsHash = valHash
+	h.NextValidatorsHash = nextValHash
 	h.ConsensusHash = consensusHash
 	h.AppHash = appHash
 	h.LastResultsHash = lastResultsHash
@@ -476,10 +473,6 @@ func (h Header) ValidateBasic() error {
 	}
 
 	// Add checking for Ostracon fields
-	if err := ValidateHash(h.VotersHash); err != nil {
-		return fmt.Errorf("wrong VotersHash: %v", err)
-	}
-
 	if h.Round < 0 {
 		return errors.New("negative Round")
 	}
@@ -498,7 +491,7 @@ func (h Header) ValidateBasic() error {
 // since a Header is not valid unless there is
 // a ValidatorsHash (corresponding to the validator set).
 func (h *Header) Hash() tmbytes.HexBytes {
-	if h == nil || len(h.ValidatorsHash) == 0 || len(h.VotersHash) == 0 {
+	if h == nil || len(h.ValidatorsHash) == 0 {
 		return nil
 	}
 	hbz, err := h.Version.Marshal()
@@ -524,7 +517,6 @@ func (h *Header) Hash() tmbytes.HexBytes {
 		bzbi,
 		cdcEncode(h.LastCommitHash),
 		cdcEncode(h.DataHash),
-		cdcEncode(h.VotersHash),
 		cdcEncode(h.ValidatorsHash),
 		cdcEncode(h.NextValidatorsHash),
 		cdcEncode(h.ConsensusHash),
@@ -551,7 +543,6 @@ func (h *Header) StringIndented(indent string) string {
 %s  LastBlockID:    %v
 %s  LastCommit:     %v
 %s  Data:           %v
-%s  Voters:         %v
 %s  Validators:     %v
 %s  NextValidators: %v
 %s  App:            %v
@@ -569,7 +560,6 @@ func (h *Header) StringIndented(indent string) string {
 		indent, h.LastBlockID,
 		indent, h.LastCommitHash,
 		indent, h.DataHash,
-		indent, h.VotersHash,
 		indent, h.ValidatorsHash,
 		indent, h.NextValidatorsHash,
 		indent, h.AppHash,
@@ -605,7 +595,6 @@ func (h *Header) ToProto() *tmproto.Header {
 		ProposerAddress:    h.ProposerAddress,
 		Round:              h.Round,
 		Proof:              h.Proof,
-		VotersHash:         h.VotersHash,
 	}
 }
 
@@ -640,7 +629,6 @@ func HeaderFromProto(ph *tmproto.Header) (Header, error) {
 	h.ProposerAddress = ph.ProposerAddress
 	h.Round = ph.Round
 	h.Proof = ph.Proof
-	h.VotersHash = ph.VotersHash
 
 	return *h, h.ValidateBasic()
 }
@@ -901,8 +889,8 @@ func (commit *Commit) MaxCommitBytes() int64 {
 // CommitToVoteSet constructs a VoteSet from the Commit and validator set.
 // Panics if signatures from the commit can't be added to the voteset.
 // Inverse of VoteSet.MakeCommit().
-func CommitToVoteSet(chainID string, commit *Commit, voters *VoterSet) *VoteSet {
-	voteSet := NewVoteSet(chainID, commit.Height, commit.Round, tmproto.PrecommitType, voters)
+func CommitToVoteSet(chainID string, commit *Commit, vals *ValidatorSet) *VoteSet {
+	voteSet := NewVoteSet(chainID, commit.Height, commit.Round, tmproto.PrecommitType, vals)
 	blsPubKeys := make([]bls.PubKey, 0, len(commit.Signatures))
 	msgs := make([][]byte, 0, len(commit.Signatures))
 	for idx, commitSig := range commit.Signatures {
@@ -921,9 +909,9 @@ func CommitToVoteSet(chainID string, commit *Commit, voters *VoterSet) *VoteSet 
 				panic(fmt.Sprintf("Failed to reconstruct LastCommit from AggregatedVotes : %v", err))
 			}
 			// Ensure that signer is a validator.
-			addr, voter := voters.GetByIndex(vote.ValidatorIndex)
+			addr, voter := vals.GetByIndex(vote.ValidatorIndex)
 			if voter == nil || addr == nil {
-				panic(fmt.Sprintf("Cannot find voter %d in voterSet of size %d", vote.ValidatorIndex, voters.Size()))
+				panic(fmt.Sprintf("Cannot find voter %d in voterSet of size %d", vote.ValidatorIndex, vals.Size()))
 			}
 			msg := VoteSignBytes(chainID, vote.ToProto())
 			blsPubKey := GetSignatureKey(voter.PubKey)

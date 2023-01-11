@@ -171,7 +171,7 @@ func (blockExec *BlockExecutor) ApplyBlock(
 
 	execStartTime := time.Now().UnixNano()
 	abciResponses, err := execBlockOnProxyApp(
-		blockExec.logger, blockExec.proxyApp, block, blockExec.store, state.InitialHeight, state.VoterParams,
+		blockExec.logger, blockExec.proxyApp, block, blockExec.store, state.InitialHeight,
 	)
 	execEndTime := time.Now().UnixNano()
 
@@ -342,7 +342,6 @@ func execBlockOnProxyApp(
 	block *types.Block,
 	store Store,
 	initialHeight int64,
-	voterParams *types.VoterParams,
 ) (*tmstate.ABCIResponses, error) {
 	var validTxs, invalidTxs = 0, 0
 
@@ -371,7 +370,7 @@ func execBlockOnProxyApp(
 	}
 	proxyAppConn.SetGlobalCallback(proxyCb)
 
-	commitInfo := getBeginBlockValidatorInfo(block, store, initialHeight, voterParams)
+	commitInfo := getBeginBlockValidatorInfo(block, store, initialHeight)
 
 	byzVals := make([]abci.Evidence, 0)
 	for _, evidence := range block.Evidence.Evidence {
@@ -424,13 +423,13 @@ func execBlockOnProxyApp(
 }
 
 func getBeginBlockValidatorInfo(block *types.Block, store Store,
-	initialHeight int64, voterParams *types.VoterParams) abci.LastCommitInfo {
+	initialHeight int64) abci.LastCommitInfo {
 	voteInfos := make([]abci.VoteInfo, block.LastCommit.Size())
 	// Initial block -> LastCommitInfo.Votes are empty.
 	// Remember that the first LastCommit is intentionally empty, so it makes
 	// sense for LastCommitInfo.Votes to also be empty.
 	if block.Height > initialHeight {
-		_, lastVoterSet, _, _, err := store.LoadVoters(block.Height-1, voterParams)
+		lastValSet, err := store.LoadValidators(block.Height - 1)
 		if err != nil {
 			panic(err)
 		}
@@ -438,20 +437,20 @@ func getBeginBlockValidatorInfo(block *types.Block, store Store,
 		// Sanity check that commit size matches validator set size - only applies
 		// after first block.
 		var (
-			commitSize  = block.LastCommit.Size()
-			voterSetLen = lastVoterSet.Size()
+			commitSize = block.LastCommit.Size()
+			valSetLen  = len(lastValSet.Validators)
 		)
-		if commitSize != voterSetLen {
+		if commitSize != valSetLen {
 			panic(fmt.Sprintf(
-				"commit size (%d) doesn't match voterset length (%d) at height %d\n\n%v\n\n%v",
-				commitSize, voterSetLen, block.Height, block.LastCommit.Signatures, lastVoterSet.Voters,
+				"commit size (%d) doesn't match valset length (%d) at height %d\n\n%v\n\n%v",
+				commitSize, valSetLen, block.Height, block.LastCommit.Signatures, lastValSet.Validators,
 			))
 		}
 
-		for i, voter := range lastVoterSet.Voters {
+		for i, val := range lastValSet.Validators {
 			commitSig := block.LastCommit.Signatures[i]
 			voteInfos[i] = abci.VoteInfo{
-				Validator:       types.OC2PB.Validator(voter),
+				Validator:       types.OC2PB.Validator(val),
 				SignedLastBlock: !commitSig.Absent(),
 			}
 		}
@@ -498,7 +497,7 @@ func updateState(
 ) (State, error) {
 
 	// Copy the valset so we can apply changes from EndBlock
-	// and update s.LastVoters and s.Validators.
+	// and update s.LastValidators and s.Validators.
 	nValSet := state.NextValidators.Copy()
 
 	// Update the validator set with the latest abciResponses.
@@ -540,24 +539,19 @@ func updateState(
 		return state, fmt.Errorf("error get proof of hash: %v", err)
 	}
 
-	validators := state.NextValidators.Copy()
-	voters := types.SelectVoter(validators, proofHash, state.VoterParams)
-
 	// NOTE: the AppHash has not been populated.
 	// It will be filled on state.Save.
 	return State{
 		Version:                          nextVersion,
 		ChainID:                          state.ChainID,
 		InitialHeight:                    state.InitialHeight,
-		VoterParams:                      state.VoterParams,
 		LastBlockHeight:                  header.Height,
 		LastBlockID:                      blockID,
 		LastBlockTime:                    header.Time,
 		LastProofHash:                    proofHash,
 		NextValidators:                   nValSet,
-		Validators:                       validators,
-		Voters:                           voters,
-		LastVoters:                       state.Voters.Copy(),
+		Validators:                       state.NextValidators.Copy(),
+		LastValidators:                   state.Validators.Copy(),
 		LastHeightValidatorsChanged:      lastHeightValsChanged,
 		ConsensusParams:                  nextParams,
 		LastHeightConsensusParamsChanged: lastHeightParamsChanged,
@@ -634,9 +628,8 @@ func ExecCommitBlock(
 	logger log.Logger,
 	store Store,
 	initialHeight int64,
-	voterParams *types.VoterParams,
 ) ([]byte, error) {
-	_, err := execBlockOnProxyApp(logger, appConnConsensus, block, store, initialHeight, voterParams)
+	_, err := execBlockOnProxyApp(logger, appConnConsensus, block, store, initialHeight)
 	if err != nil {
 		logger.Error("failed executing block on proxy app", "height", block.Height, "err", err)
 		return nil, err

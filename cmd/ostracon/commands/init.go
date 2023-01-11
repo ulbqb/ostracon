@@ -76,7 +76,6 @@ func initFilesWithConfig(config *cfg.Config) error {
 			ChainID:         fmt.Sprintf("test-chain-%v", tmrand.Str(6)),
 			GenesisTime:     tmtime.Now(),
 			ConsensusParams: types.DefaultConsensusParams(),
-			VoterParams:     types.DefaultVoterParams(),
 		}
 		pubKey, err := pv.GetPubKey()
 		if err != nil {
