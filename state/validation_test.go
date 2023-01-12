@@ -60,7 +60,6 @@ func TestValidateBlockHeader(t *testing.T) {
 		{"LastCommitHash wrong", func(block *types.Block) { block.LastCommitHash = wrongHash }},
 		{"DataHash wrong", func(block *types.Block) { block.DataHash = wrongHash }},
 
-		{"VotersHash wrong", func(block *types.Block) { block.VotersHash = wrongHash }},
 		{"ValidatorsHash wrong", func(block *types.Block) { block.ValidatorsHash = wrongHash }},
 		{"NextValidatorsHash wrong", func(block *types.Block) { block.NextValidatorsHash = wrongHash }},
 		{"ConsensusHash wrong", func(block *types.Block) { block.ConsensusHash = wrongHash }},
