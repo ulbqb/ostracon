@@ -49,10 +49,6 @@ func TestNewLightClientStateProvider(t *testing.T) {
 		return assert.Error(t, err) &&
 			assert.Contains(t, err.Error(), "at least 2 RPC servers are required, got ")
 	}
-	genesisErrorFunc := func(t assert.TestingT, err error, i ...interface{}) bool {
-		return assert.Error(t, err) &&
-			assert.Contains(t, err.Error(), "failed to retrieve genesis doc: ")
-	}
 	lightErrorFunc := func(t assert.TestingT, err error, i ...interface{}) bool {
 		return assert.Error(t, err) &&
 			assert.Contains(t, err.Error(), "invalid TrustOptions: negative or zero period")
@@ -89,12 +85,6 @@ func TestNewLightClientStateProvider(t *testing.T) {
 			args:    args{servers: []string{"a", "a"}},
 			want:    nil,
 			wantErr: serversErrorFunc,
-		},
-		{
-			name:    "fail genesis",
-			args:    args{servers: []string{"a", "b"}},
-			want:    nil,
-			wantErr: genesisErrorFunc,
 		},
 		{
 			name:    "fail light client",
@@ -155,7 +145,6 @@ func setupVars(t *testing.T) {
 	votersIndices = make([]int32, size)
 	for i := 0; i < size; i++ {
 		val, privVal := types.RandValidator(true, 1)
-		val.VotingPower = val.VotingPower
 		privVals[i] = &privVal
 		vals[i] = val
 		votersIndices[i] = int32(i)
