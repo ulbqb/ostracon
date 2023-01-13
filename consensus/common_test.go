@@ -266,15 +266,6 @@ func signAddVotes(
 	addVotes(to, votes...)
 }
 
-func getValidatorBeingNotVoter(cs *State) *types.Validator {
-	for _, val := range cs.Validators.Validators {
-		if !cs.Voters.HasAddress(val.Address) {
-			return val
-		}
-	}
-	return nil
-}
-
 func validatePrevote(t *testing.T, cs *State, round int32, privVal *validatorStub, blockHash []byte) {
 	prevotes := cs.Votes.Prevotes(round)
 	pubKey, err := privVal.GetPubKey()
@@ -479,38 +470,12 @@ func loadPrivValidator(config *cfg.Config) *privval.FilePV {
 }
 
 func randState(nValidators int) (*State, []*validatorStub) {
-	return randStateWithVoterParamsWithApp(
-		nValidators,
-		types.DefaultVoterParams(),
-		counter.NewApplication(true))
+	return randStateWithApp(nValidators, counter.NewApplication(true))
 }
 
-func randStateWithVoterParams(
-	nValidators int,
-	voterParams *types.VoterParams) (*State, []*validatorStub) {
-	return randStateWithVoterParamsWithApp(
-		nValidators,
-		voterParams,
-		counter.NewApplication(true))
-}
-
-func randStateWithVoterParamsWithPersistentKVStoreApp(
-	nValidators int,
-	voterParams *types.VoterParams,
-	testName string) (*State, []*validatorStub) {
-	return randStateWithVoterParamsWithApp(
-		nValidators,
-		voterParams,
-		newPersistentKVStoreWithPath(path.Join(config.DBDir(), testName)))
-}
-
-func randStateWithVoterParamsWithApp(
-	nValidators int,
-	voterParams *types.VoterParams,
-	app abci.Application) (*State, []*validatorStub) {
-
+func randStateWithApp(nValidators int, app abci.Application) (*State, []*validatorStub) {
 	// Get State
-	state, privVals := randGenesisState(nValidators, false, 10, voterParams)
+	state, privVals := randGenesisState(nValidators, false, 10)
 	state.LastProofHash = []byte{2}
 
 	vss := make([]*validatorStub, nValidators)
@@ -834,7 +799,7 @@ func consensusLogger() log.Logger {
 
 func randConsensusNet(nValidators int, testName string, tickerFunc func() TimeoutTicker,
 	appFunc func() abci.Application, configOpts ...func(*cfg.Config)) ([]*State, cleanupFunc) {
-	genDoc, privVals := randGenesisDoc(nValidators, false, 30, types.DefaultVoterParams())
+	genDoc, privVals := randGenesisDoc(nValidators, false, 30)
 	css := make([]*State, nValidators)
 	logger := consensusLogger()
 	configRootDirs := make([]string, 0, nValidators)
@@ -878,7 +843,7 @@ func consensusNetWithPeers(
 	appFunc func(string) abci.Application,
 	nValsWithComposite int,
 ) ([]*State, *types.GenesisDoc, *cfg.Config, cleanupFunc) {
-	genDoc, privVals := genesisDoc(nValidators, testMinPower, types.DefaultVoterParams(), nValsWithComposite)
+	genDoc, privVals := genesisDoc(nValidators, testMinPower, nValsWithComposite)
 
 	css, peer0Config, configRootDirs := createPeersAndValidators(nValidators, nPeers, testName,
 		genDoc, privVals, tickerFunc, appFunc)
@@ -898,7 +863,7 @@ func randConsensusNetWithPeers(
 	tickerFunc func() TimeoutTicker,
 	appFunc func(string) abci.Application,
 ) ([]*State, *types.GenesisDoc, *cfg.Config, cleanupFunc) {
-	genDoc, privVals := randGenesisDoc(nValidators, false, testMinPower, types.DefaultVoterParams())
+	genDoc, privVals := randGenesisDoc(nValidators, false, testMinPower)
 	css, peer0Config, configRootDirs := createPeersAndValidators(nValidators, nPeers, testName,
 		genDoc, privVals, tickerFunc, appFunc)
 
@@ -973,7 +938,6 @@ func getSwitchIndex(switches []*p2p.Switch, peer p2p.Peer) int {
 func genesisDoc(
 	numValidators int,
 	minPower int64,
-	voterParams *types.VoterParams,
 	nValsWithComposite int,
 ) (*types.GenesisDoc, []types.PrivValidator) {
 	validators := make([]types.GenesisValidator, numValidators)
@@ -1002,16 +966,10 @@ func genesisDoc(
 		GenesisTime: tmtime.Now(),
 		ChainID:     config.ChainID(),
 		Validators:  validators,
-		VoterParams: voterParams,
 	}, privValidators
 }
 
-func randGenesisDoc(
-	numValidators int,
-	randPower bool,
-	minPower int64,
-	voterParams *types.VoterParams,
-) (*types.GenesisDoc, []types.PrivValidator) {
+func randGenesisDoc(numValidators int, randPower bool, minPower int64) (*types.GenesisDoc, []types.PrivValidator) {
 	validators := make([]types.GenesisValidator, numValidators)
 	privValidators := make([]types.PrivValidator, numValidators)
 	for i := 0; i < numValidators; i++ {
@@ -1029,13 +987,11 @@ func randGenesisDoc(
 		InitialHeight: 1,
 		ChainID:       config.ChainID(),
 		Validators:    validators,
-		VoterParams:   voterParams,
 	}, privValidators
 }
 
-func randGenesisState(numValidators int, randPower bool, minPower int64, voterParams *types.VoterParams) (
-	sm.State, []types.PrivValidator) {
-	genDoc, privValidators := randGenesisDoc(numValidators, randPower, minPower, voterParams)
+func randGenesisState(numValidators int, randPower bool, minPower int64) (sm.State, []types.PrivValidator) {
+	genDoc, privValidators := randGenesisDoc(numValidators, randPower, minPower)
 	s0, _ := sm.MakeGenesisState(genDoc)
 	return s0, privValidators
 }
