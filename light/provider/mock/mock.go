@@ -112,6 +112,12 @@ func (p *Mock) ReportEvidence(_ context.Context, ev types.Evidence) error {
 }
 
 func (p *Mock) HasEvidence(ev types.Evidence) bool {
+	fmt.Printf("---------------------------\n\n")
+	for key, element := range p.evidenceToReport {
+		fmt.Printf("%X => \n%v\n\n", key, element)
+	}
+	fmt.Printf("%X => %v\n\n", ev.Hash(), ev)
+	fmt.Printf("---------------------------\n\n")
 	_, ok := p.evidenceToReport[string(ev.Hash())]
 	return ok
 }
